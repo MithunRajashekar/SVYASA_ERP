@@ -1,0 +1,52 @@
+{
+  "name": "svyasa-erp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "dev:admin": "vite --config vite.admin.config.js --host 0.0.0.0 --port 5175",
+    "dev:student": "npm --prefix student-app run dev",
+    "dev:api": "node server/index.js",
+    "dev:all": "concurrently -k -n api,admin,faculty,student -c magenta,yellow,cyan,green \"npm run dev:api\" \"npm run dev:admin\" \"npm run dev\" \"npm run dev:student\"",
+    "build": "vite build",
+    "build:admin": "vite build --config vite.admin.config.js",
+    "build:student": "npm --prefix student-app run build",
+    "build:all": "npm run build && npm run build:admin && npm run build:student",
+    "preview": "vite preview --host 0.0.0.0",
+    "preview:admin": "vite preview --config vite.admin.config.js --host 0.0.0.0 --port 4175",
+    "preview:student": "npm --prefix student-app run preview -- --host 0.0.0.0 --port 4174",
+    "seed:demo": "node server/seed.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "@ckeditor/ckeditor5-build-classic": "^41.4.2",
+    "@ckeditor/ckeditor5-react": "^11.1.2",
+    "@phosphor-icons/react": "^2.1.7",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "docx": "^9.6.1",
+    "express": "^5.1.0",
+    "file-saver": "^2.0.5",
+    "lucide-react": "^0.383.0",
+    "mongoose": "^9.3.3",
+    "react": "^18.3.1",
+    "react-datepicker": "^9.1.0",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.15.0",
+    "xlsx": "^0.18.5",
+    "date-fns": "^4.1.0",
+    "html2pdf.js": "^0.14.0",
+    "helmet": "^8.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^9.1.2",
+    "tailwindcss": "^4.0.0",
+    "vite": "^6.0.0"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  }
+}

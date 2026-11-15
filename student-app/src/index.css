@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 🔥 REMOVE BLUE CLICK HIGHLIGHT (WORKING FIX) */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Remove focus styles completely */
+*:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Remove button / div click flash */
+button, div {
+  -webkit-tap-highlight-color: transparent;
+}
+
+*:focus-visible {
+  outline: none !important;
+}
+
+*:active {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.sidebar {
+  background: var(--color-sidebar-bg);
+}
+
+.sidebar-item {
+  color: var(--color-sidebar-text);
+}
+
+.sidebar-item:hover {
+  background: var(--color-sidebar-hover);
+}
+
+.sidebar-item.active {
+  background: var(--color-sidebar-active);
+}
+
+
+:root {
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: Georgia, serif;
+
+  --color-brand: #7B1D2E;
+  --color-brand-2: #A53050;
+
+  --color-maroon: #9B2335;
+  --color-maroon-hover: #B03040;
+  --color-maroon-pale: #F9ECED;
+  --color-maroon-dark: #7A1A28;
+
+  --color-sidebar-bg: #1C0A0D;
+  --color-sidebar-text: #F5E8EA;
+  --color-sidebar-muted: #A07480;
+  --color-sidebar-active: #9B2335;
+
+  /* ADD THESE */
+  --color-sidebar-hover: #351317;
+  --color-sidebar-border: #2A1015;
+
+  --color-page-bg: #F2F3F6;
+  --color-card: #FFFFFF;
+  --color-border: #E4E6EA;
+
+  --color-text: #1A1A2E;
+  --color-text2: #6B7280;
+}
