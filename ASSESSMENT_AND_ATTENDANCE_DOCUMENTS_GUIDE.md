@@ -84,9 +84,9 @@ Students can submit documents only against their own saved attendance records. S
 
 ## 6. Review and download
 
-Assigned Faculty and Administrators can:
+Assigned Faculty, the student's active Faculty mentor (for the same academic year), and Administrators can:
 
-- Open the document from the attendance row.
+- Open the document from the attendance row or the mentor's pending-document inbox.
 - Download it after the server checks access to the linked attendance record.
 - Approve or reject a pending student upload.
 - Add an optional review remark.

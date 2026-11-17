@@ -6,11 +6,40 @@ import { Enrollment } from "../models/Enrollment.js";
 import { Attendance } from "../models/Attendance.js";
 import { Marks } from "../models/Marks.js";
 import { AttendanceDocument } from "../models/AttendanceDocument.js";
+import { MentorAssignment } from "../models/MentorAssignment.js";
+import { StudentNoc } from "../models/StudentNoc.js";
+import { MentorSession } from "../models/MentorSession.js";
+import { StudentCertificate } from "../models/StudentCertificate.js";
+import { ensureDataFolder } from "../utils/autoFolders.js";
 import { calculateAssessmentSummary } from "../utils/assessment.js";
 import { authenticate, requireRole, safeUser, setSessionCookie, signSession } from "../middleware/auth.js";
 import { authenticateCredentials } from "./auth.js";
 
 export const studentRouter = Router();
+const CERTIFICATE_CATEGORIES = new Set(["academic", "achievement", "workshop", "internship", "participation", "sports", "cultural", "other"]);
+const CERTIFICATE_MIME = new Set(["application/pdf", "image/jpeg", "image/png"]);
+const MAX_CERTIFICATE_BYTES = 5 * 1024 * 1024;
+
+function decodeCertificateFile(body = {}) {
+  const mimeType = String(body.mimeType || "").trim().toLowerCase();
+  if (!CERTIFICATE_MIME.has(mimeType)) throw Object.assign(new Error("Only PDF, JPG/JPEG and PNG certificates are accepted."), { status: 400 });
+  const originalName = String(body.fileName || "").replace(/[\\/]/g, "_").trim().slice(0, 180);
+  if (!originalName) throw Object.assign(new Error("Certificate file name is required."), { status: 400 });
+  let encoded = String(body.contentBase64 || "").trim();
+  if (encoded.startsWith("data:")) encoded = encoded.slice(encoded.indexOf(",") + 1);
+  if (!encoded || encoded.length > Math.ceil(MAX_CERTIFICATE_BYTES * 4 / 3) + 8 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw Object.assign(new Error("Certificate file content is missing or invalid."), { status: 400 });
+  const content = Buffer.from(encoded, "base64");
+  if (!content.length || content.length > MAX_CERTIFICATE_BYTES) throw Object.assign(new Error("Each certificate must be 5 MB or smaller."), { status: 400 });
+  const signatureMatches = mimeType === "application/pdf" ? content.subarray(0, 5).toString("ascii") === "%PDF-"
+    : mimeType === "image/png" ? content.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+      : content.length >= 3 && content[0] === 0xff && content[1] === 0xd8 && content[2] === 0xff;
+  if (!signatureMatches) throw Object.assign(new Error("The file contents do not match the selected PDF/JPG/PNG type."), { status: 400 });
+  return { originalName, mimeType, content, size: content.length };
+}
+
+function certificateMetadata(row) {
+  return { id: String(row._id), title: row.title, category: row.category, issuer: row.issuer || "", issueDate: row.issueDate || null, description: row.description || "", originalName: row.originalName, mimeType: row.mimeType, size: row.size, reviewStatus: row.reviewStatus, reviewRemarks: row.reviewRemarks || "", reviewedByRole: row.reviewedByRole || null, reviewedAt: row.reviewedAt || null, uploadedByRole: row.uploadedByRole, createdAt: row.createdAt };
+}
 const studentLoginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, message: "Too many sign-in attempts. Try again in 15 minutes." });
 
 function assertSelf(req, res) {
@@ -133,4 +162,71 @@ studentRouter.get("/marks/:student_id", authenticate, requireRole("student"), as
     };
   });
   return res.json({ success: true, marks });
+});
+
+
+// Student NOC workflow: students can request an NOC only when an active mentor has been assigned.
+studentRouter.get("/noc-requests", authenticate, requireRole("student"), async (req, res) => {
+  const [assignment, requests, sessions, certificates] = await Promise.all([
+    MentorAssignment.findOne({ studentId: req.user.id, status: "active" }).populate("mentorId", "name code email department").sort({ updatedAt: -1 }).lean(),
+    StudentNoc.find({ studentId: req.user.id }).populate("mentorId", "name code").sort({ createdAt: -1 }).limit(100).lean(),
+    MentorSession.find({ studentId: req.user.id, status: { $in: ["scheduled", "completed"] } })
+      .populate("mentorId", "name code").select("studentId mentorId academicYear agenda sessionAt durationMinutes mode locationOrLink status studentSummary actionItems followUpDate completedAt createdAt")
+      .sort({ sessionAt: -1 }).limit(300).lean(),
+    StudentCertificate.find({ studentId: req.user.id }).select("-content").sort({ issueDate: -1, createdAt: -1 }).limit(500).lean(),
+  ]);
+  return res.json({
+    mentor: assignment ? { id: String(assignment.mentorId?._id || assignment.mentorId), name: assignment.mentorId?.name || "", code: assignment.mentorId?.code || "", email: assignment.mentorId?.email || "", academicYear: assignment.academicYear } : null,
+    requests: requests.map((row) => ({ ...row, id: String(row._id), mentor: row.mentorId })),
+    sessions: sessions.map((row) => ({ ...row, id: String(row._id), mentor: row.mentorId })),
+    certificates: certificates.map(certificateMetadata),
+  });
+});
+
+studentRouter.post("/certificates", authenticate, requireRole("student"), async (req, res) => {
+  const title = String(req.body?.title || "").trim().slice(0, 180);
+  const category = String(req.body?.category || "other").toLowerCase();
+  if (!title) return sendValidationError(res, "Certificate title is required.");
+  if (!CERTIFICATE_CATEGORIES.has(category)) return sendValidationError(res, "Choose a valid certificate category.");
+  const file = decodeCertificateFile(req.body || {});
+  const issueDate = req.body?.issueDate ? new Date(req.body.issueDate) : null;
+  if (issueDate && Number.isNaN(issueDate.getTime())) return sendValidationError(res, "Certificate issue date is invalid.");
+  const assignment = await MentorAssignment.findOne({ studentId: req.user.id, status: "active" }).sort({ updatedAt: -1 }).lean();
+  if (!assignment) return res.status(409).json({ error: "You need an active Mentor assignment before submitting a certificate. Please contact the Administrator." });
+  const academicYear = assignment.academicYear || "";
+  const folderId = await ensureDataFolder("Student Records", [academicYear || "Unassigned Academic Year", "Certificates", req.user.code]);
+  const certificate = await StudentCertificate.create({
+    folderId, studentId: req.user.id, mentorId: assignment?.mentorId || null,
+    mentorAssignmentId: assignment?._id || null, academicYear, title, category,
+    issuer: String(req.body?.issuer || "").trim().slice(0, 180), issueDate,
+    description: String(req.body?.description || "").trim().slice(0, 2000), ...file,
+    uploadedBy: req.user.id, uploadedByRole: "student", reviewStatus: "pending",
+  });
+  return res.status(201).json({ success: true, message: "Certificate submitted for mentor review.", certificate: certificateMetadata(certificate) });
+});
+
+studentRouter.get("/certificates/:id/download", authenticate, requireRole("student"), async (req, res) => {
+  if (!/^[a-f\d]{24}$/i.test(String(req.params.id || ""))) return sendValidationError(res, "Certificate ID is invalid.");
+  const certificate = await StudentCertificate.findOne({ _id: req.params.id, studentId: req.user.id }).select("+content");
+  if (!certificate) return res.status(404).json({ error: "Certificate not found." });
+  const safeName = certificate.originalName.replace(/[^\x20-\x7E]/g, "_").replace(/["\\\r\n]/g, "_");
+  const encodedName = encodeURIComponent(certificate.originalName).replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+  res.set({ "Content-Type": certificate.mimeType, "Content-Length": String(certificate.size), "Content-Disposition": `attachment; filename="${safeName}"; filename*=UTF-8''${encodedName}`, "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store" });
+  return res.send(certificate.content);
+});
+
+studentRouter.post("/noc-requests", authenticate, requireRole("student"), async (req, res) => {
+  const purpose = String(req.body?.purpose || "").trim().slice(0, 180);
+  const details = String(req.body?.details || "").trim().slice(0, 3000);
+  if (!purpose) return res.status(400).json({ error: "Enter the purpose for the NOC." });
+  const assignment = await MentorAssignment.findOne({ studentId: req.user.id, status: "active" }).sort({ updatedAt: -1 }).lean();
+  if (!assignment) return res.status(409).json({ error: "No active mentor is assigned to your account. Contact the administrator." });
+  const existing = await StudentNoc.findOne({ studentId: req.user.id, status: "pending" }).lean();
+  if (existing) return res.status(409).json({ error: "You already have an NOC request pending with your mentor." });
+  const folderId = await ensureDataFolder("Student Services", ["NOC Requests", assignment.academicYear, req.user.code]);
+  const record = await StudentNoc.create({
+    folderId, studentId: req.user.id, mentorId: assignment.mentorId, mentorAssignmentId: assignment._id,
+    academicYear: assignment.academicYear, purpose, details, status: "pending", requestedAt: new Date(),
+  });
+  return res.status(201).json({ success: true, message: "NOC request sent to your assigned mentor.", request: { id: String(record._id), status: record.status, purpose: record.purpose, academicYear: record.academicYear } });
 });

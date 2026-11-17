@@ -17,6 +17,7 @@ A three-portal ERP MVP for academic and campus operations. The Administrator, Fa
 - Faculty frontend: React + Vite (`src/`)
 - Student frontend: React + Vite (`student-app/`)
 - Shared backend: Node.js + Express (`server/`)
+- Shared screens and role-specific navigation are mirrored across the portal source trees. A Mentor is an existing Faculty account with an Admin-created mentor assignment; this is not a fourth portal or a separate login role.
 - Database: MongoDB Atlas + Mongoose
 - Authentication: bcrypt password hashes, signed session token in an HttpOnly cookie, role-specific sign-in, rate-limited login and server-side resource checks
 - Automatic filing: backend-generated `DataFolder` hierarchy; records store a generated `folderId`. No portal exposes folder creation or manual sorting.
@@ -94,8 +95,10 @@ Faculty and student accounts are provisioned by the Administrator portal. The ad
 - Create and maintain classes/sections and subjects.
 - Assign faculty to class/subject pairs and enrol students in classes.
 - Review student requests, assignment submissions, mentoring requests, pending sick certificates/OD letters and faculty event proposals.
+- Assign existing Faculty accounts as mentors to students by academic year; oversee NOC requests and mentor decisions.
+- Create hostel room inventory, allocate individual beds to students by academic year, view occupancy and release allotments.
 - Publish and manage university timetables, academic calendar, notices, fee records, library catalogue, career opportunities and skills programmes.
-- View and correct institution-wide attendance and CIA/Internal records.
+- View and correct institution-wide attendance and CIA/Internal records; download class/subject attendance and marks reports.
 - Create and manage university events.
 - Inspect automatically generated data folders. Folder administration is read-only by design.
 
@@ -106,12 +109,16 @@ Faculty and student accounts are provisioned by the Administrator portal. The ad
 - Enter three CIA scores and two Internal assessment scores (0–100 each); CIA Average and Internal Average are calculated separately by the API.
 - Create lesson plans, assessments, assignments, class timetables and exam schedules for allocated classes.
 - Grade assignment submissions and provide feedback for students within assigned classes.
-- Record mentoring sessions and review mentoring requests from students in assigned classes.
+- Schedule mentoring sessions, retain session notes/action items and handle requests from assigned mentees.
+- When Admin assigns a Faculty member as a mentor, review OD/sick documents for those assigned mentees, including historical attendance records and subjects the mentor does not teach, while the student remains currently assigned to them; issue or reject their NOC requests.
+- Download attendance and CIA/Internal reports for assigned class/subject combinations only.
 - Publish department-level notices/calendar content and submit event proposals for Administrator approval.
 
 ### Student
 
 - See only their own attendance, CIA scores and Internal scores; submit a sick certificate or OD letter against one of their own saved attendance entries and view its review status.
+- Request an NOC from their assigned mentor, track its review status and download the PDF if issued.
+- Download their own attendance and CIA/Internal marks reports; class-wide reports are not exposed to Students.
 - View published class/university timetable, notices, academic calendar, assessments, events and eligible assignments.
 - Submit assignment links, mentoring requests, fee queries, library/hostel requests and general student requests.
 - Apply for published placements/internships and enrol in published soft-skills programmes, subject to deadlines and seat availability.
@@ -201,3 +208,44 @@ The attendance register supports PDF/JPG/PNG sick certificates and OD letters (m
 ### Sick certificate and OD-letter approval authority
 
 Student-submitted sick certificates and OD letters enter `pending` review. Faculty members can approve or reject documents only when they are assigned to the exact class and subject linked to the attendance record. Administrators retain institution-wide review authority. The system records the reviewer role (`faculty` or `admin`), decision, timestamp and review remarks; students can see the decision and who made it in their attendance history. Faculty review is available inline in the Faculty Portal under Attendance Management, on the same attendance page.
+
+
+## 13. Mentor, NOC and hostel allotment workflows
+
+- The Administrator assigns existing Faculty accounts as mentors to students for a specified academic year. The same faculty login is used for teaching and mentoring; no fourth portal or separate mentor credentials are created. One active mentor assignment is maintained per student and academic year.
+- Faculty see only their own active mentees in **Mentoring**. Mentors can review OD letters and medical/sick certificates submitted by those mentees, even when they do not teach the linked subject, provided the student is currently assigned to that mentor; historical documents remain accessible to the current mentor while the assignment is active. Existing Faculty subject-assignment review permissions remain in place.
+- Students can request an NOC from their assigned mentor, track pending/rejected/issued states and download an issued NOC PDF. A mentor can issue or reject a pending request only while the student is actively assigned to that mentor. Decisions retain reviewer identity/role, timestamp, remarks and a generated NOC number when issued. The Administrator has a university-wide NOC oversight view and controls mentor assignment.
+- The Administrator creates hostel room inventory (hostel, block/floor, room number, type and bed capacity), allots a specific bed to an active student for an academic year, views occupancy/vacancy and releases allotments. Server-side checks prevent duplicate active student allotments, occupied-bed allocation and allocation beyond room capacity. Student hostel requests remain separate from actual bed allotment; only the Administrator performs the allotment.
+
+## 14. Attendance and marks report downloads
+
+- Administrator can download attendance and CIA/Internal marks workbooks for any selected class and subject.
+- Faculty can download workbooks only for their own assigned class/subject combinations. Attendance exports accept an optional date range and include remarks plus OD/sick document review status. Marks exports include CIA 1-3, Internal 1-2, their independent averages and completion counts.
+- Students can download their own attendance and marks from the Student portal; they cannot download class-wide reports.
+
+## 15. Current validation snapshot
+
+The focused regression suite for reports, mentor dossiers/sessions/certificates, NOC, hostel, role authorization and portal navigation currently passes **26 tests** using Node's built-in test runner. The API smoke test requires the project dependencies to be installed (including `bcryptjs`); it could not run in the dependency-free packaging workspace. These are source-level/regression checks, not a live MongoDB/Atlas or browser end-to-end test. Run `npm test` and `npm run build:all` on a configured Windows development machine after dependencies are installed.
+
+
+### Mentoring workspace (17 November update)
+- The navigation item is named **Mentoring** across all three portals; NOC is included inside Mentoring rather than shown as a separate tab.
+- Admin assigns existing Faculty members to students as Mentors by academic year.
+- Mentors schedule sessions with agenda, meeting details and student-visible notes, then record private notes, outcomes, follow-up dates and action items.
+- Mentors can open the full dossier for their active mentees, including configured personal/guardian details, attendance, marks, fees paid/outstanding, certificates, hostel/NOC and service records.
+- Students upload individual certificates; assigned Mentors review them. Mentors can also add certificates to an individual mentee record.
+- Mentor dossier, certificate, download and session endpoints enforce active mentor assignment server-side. Mentor-only session notes are not returned to students.
+- The active Mentor can review the mentee's historical ERP records. Private mentor notes from prior Mentors remain restricted to their original authors. Students can see their own session agenda, student-facing summary, follow-up and action items, but not mentor-only notes.
+
+
+## Extended Mentoring workspace (latest update)
+
+- The navigation item is named **Mentoring** in the Admin, Faculty and Student portals. NOC is a section within Mentoring; it is not a separate portal or top-level tab.
+- Admin assigns existing Faculty accounts as mentors and allocates students as mentees by academic year. Mentoring does not create a fourth login role or portal.
+- Mentors can schedule sessions whenever needed, with an agenda, date/time, duration, mode, location/meeting link, student-facing summary, follow-up date and action items. After a session, the mentor records private notes and completion details.
+- Mentors can open a full dossier for each currently assigned mentee: personal/contact details, guardians and emergency contacts (when recorded), enrolments, historical attendance and linked documents, CIA/Internal marks and averages, fee totals/paid/outstanding and fee records, student certificates, mentoring sessions, NOC history, hostel allotments and other student-linked service records. Access is restricted server-side to currently assigned mentees.
+- Historical session entries identify the mentor. Private mentor notes are visible only to the mentor who authored them; current mentors can see prior session agenda, date, student-facing summary and action items, but not another mentor’s private notes.
+- Mentors can add certificates individually to a mentee’s student record. Students can upload their own certificates through Student → Mentoring. Student uploads enter review; mentor-added certificates are recorded as added by the assigned mentor.
+- A pending certificate inbox helps mentors find student uploads without opening every profile. The mentor must still be the student’s current assigned mentor to review or download that student’s private records.
+- NOC remains within the Mentoring workspace. Students request an NOC from their assigned mentor; the mentor can review, issue or reject it; Admin has university-wide oversight.
+- Fee totals are calculated from the student-linked fee records currently stored in the ERP. If fee transactions are incomplete or entered outside the ERP, the displayed balance will also be incomplete.

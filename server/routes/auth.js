@@ -28,7 +28,7 @@ function validEmail(value) {
   return !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-async function createUser({ code, name, role, password, usn = "", email = "", phone = "", department = "", semester = null, section = "", program = "" }) {
+async function createUser({ code, name, role, password, usn = "", email = "", phone = "", department = "", semester = null, section = "", program = "", personalDetails = {} }) {
   const normalizedCode = cleanString(code, 64).toUpperCase();
   const normalizedName = cleanString(name, 120);
   const normalizedEmail = cleanString(email, 254).toLowerCase();
@@ -58,6 +58,9 @@ async function createUser({ code, name, role, password, usn = "", email = "", ph
     semester: semester === "" || semester === undefined || semester === null ? null : Number(semester),
     section: cleanString(section, 20),
     program: cleanString(program, 120),
+    personalDetails: role === "student" && personalDetails && typeof personalDetails === "object" && !Array.isArray(personalDetails)
+      ? Object.fromEntries(Object.entries(personalDetails).filter(([key]) => ["dateOfBirth", "gender", "bloodGroup", "nationality", "addressLine1", "addressLine2", "city", "state", "postalCode", "guardianName", "guardianRelation", "guardianEmail", "guardianPhone", "emergencyContactName", "emergencyContactPhone", "admissionNumber"].includes(key)).map(([key, value]) => [key, cleanString(String(value ?? ""), key.toLowerCase().includes("email") ? 254 : 180)]))
+      : {},
     passwordHash,
   };
   accountData.folderId = await userFolderId(accountData);

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, Check, ClipboardCheck, Download, FolderTree, LoaderCircle, Plus, RefreshCw, ShieldCheck, Trash2, UserPlus, Users, X } from "lucide-react";
 import { api, fmtDate } from "./api";
 
-const emptyUser = { code: "", name: "", role: "student", password: "", email: "", phone: "", department: "", program: "", semester: "", section: "", usn: "" };
+const emptyUser = { code: "", name: "", role: "student", password: "", email: "", phone: "", department: "", program: "", semester: "", section: "", usn: "", personalDetails: { dateOfBirth: "", gender: "", bloodGroup: "", nationality: "", addressLine1: "", addressLine2: "", city: "", state: "", postalCode: "", guardianName: "", guardianRelation: "", guardianEmail: "", guardianPhone: "", emergencyContactName: "", emergencyContactPhone: "", admissionNumber: "" } };
 const emptyClass = { department: "", semester: "1", academicYear: "2026-2027", section: "A", name: "" };
 const emptySubject = { code: "", name: "", department: "", semester: "1", section: "" };
 
@@ -126,6 +126,23 @@ export default function AdminConsole({ section }) {
       const section = window.prompt("Section", user.section || "");
       if (section === null) return;
       Object.assign(profile, { usn, semester: semester ? Number(semester) : null, section });
+      const current = user.personalDetails || {};
+      const personalDetails = { ...current };
+      const prompts = [
+        ["dateOfBirth", "Date of birth (YYYY-MM-DD)"], ["gender", "Gender"], ["bloodGroup", "Blood group"],
+        ["nationality", "Nationality"], ["addressLine1", "Address line 1"], ["addressLine2", "Address line 2"],
+        ["city", "City"], ["state", "State"], ["postalCode", "Postal code"],
+        ["guardianName", "Parent / guardian name"], ["guardianRelation", "Guardian relationship"],
+        ["guardianEmail", "Guardian email"], ["guardianPhone", "Guardian phone"],
+        ["emergencyContactName", "Emergency contact name"], ["emergencyContactPhone", "Emergency contact phone"],
+        ["admissionNumber", "Admission number"],
+      ];
+      for (const [key, label] of prompts) {
+        const value = window.prompt(label, personalDetails[key] || "");
+        if (value === null) return;
+        personalDetails[key] = value;
+      }
+      profile.personalDetails = personalDetails;
     }
     await runSave(() => api(`/api/admin/users/${user.id}`, { method: "PUT", body: profile }));
   }
@@ -194,7 +211,7 @@ export default function AdminConsole({ section }) {
         <FormField label="Phone" value={userForm.phone} onChange={(value) => setUserForm({ ...userForm, phone: value })} />
         <FormField label="Department" value={userForm.department} onChange={(value) => setUserForm({ ...userForm, department: value })} />
         <FormField label="Programme" value={userForm.program} onChange={(value) => setUserForm({ ...userForm, program: value })} />
-        {userForm.role === "student" && <><FormField label="USN" value={userForm.usn} onChange={(value) => setUserForm({ ...userForm, usn: value.toUpperCase() })} /><FormField label="Semester" value={userForm.semester} onChange={(value) => setUserForm({ ...userForm, semester: value })} type="number" /><FormField label="Section" value={userForm.section} onChange={(value) => setUserForm({ ...userForm, section: value.toUpperCase() })} /></>}
+        {userForm.role === "student" && <><FormField label="USN" value={userForm.usn} onChange={(value) => setUserForm({ ...userForm, usn: value.toUpperCase() })} /><FormField label="Semester" value={userForm.semester} onChange={(value) => setUserForm({ ...userForm, semester: value })} type="number" /><FormField label="Section" value={userForm.section} onChange={(value) => setUserForm({ ...userForm, section: value.toUpperCase() })} /><details className="erp-personal-details"><summary>Additional student personal details (optional)</summary><div className="erp-form-grid"><FormField label="Date of birth" value={userForm.personalDetails?.dateOfBirth || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, dateOfBirth: value } })} type="date" /><FormField label="Gender" value={userForm.personalDetails?.gender || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, gender: value } })} /><FormField label="Blood group" value={userForm.personalDetails?.bloodGroup || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, bloodGroup: value } })} /><FormField label="Nationality" value={userForm.personalDetails?.nationality || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, nationality: value } })} /><FormField label="Address line 1" value={userForm.personalDetails?.addressLine1 || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, addressLine1: value } })} /><FormField label="Address line 2" value={userForm.personalDetails?.addressLine2 || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, addressLine2: value } })} /><FormField label="City" value={userForm.personalDetails?.city || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, city: value } })} /><FormField label="State" value={userForm.personalDetails?.state || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, state: value } })} /><FormField label="Postal code" value={userForm.personalDetails?.postalCode || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, postalCode: value } })} /><FormField label="Parent / guardian name" value={userForm.personalDetails?.guardianName || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, guardianName: value } })} /><FormField label="Guardian relationship" value={userForm.personalDetails?.guardianRelation || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, guardianRelation: value } })} /><FormField label="Guardian email" value={userForm.personalDetails?.guardianEmail || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, guardianEmail: value } })} type="email" /><FormField label="Guardian phone" value={userForm.personalDetails?.guardianPhone || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, guardianPhone: value } })} /><FormField label="Emergency contact name" value={userForm.personalDetails?.emergencyContactName || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, emergencyContactName: value } })} /><FormField label="Emergency contact phone" value={userForm.personalDetails?.emergencyContactPhone || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, emergencyContactPhone: value } })} /><FormField label="Admission number" value={userForm.personalDetails?.admissionNumber || ""} onChange={(value) => setUserForm({ ...userForm, personalDetails: { ...userForm.personalDetails, admissionNumber: value } })} /></div></details></>}
         <div className="erp-form-submit"><button className="erp-button" disabled={saving}><Plus size={16} /> {saving ? "Creating…" : "Create account"}</button></div>
       </form>
     </div>

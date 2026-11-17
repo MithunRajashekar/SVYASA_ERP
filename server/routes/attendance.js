@@ -6,6 +6,7 @@ import { ClassSection } from "../models/ClassSection.js";
 import { Subject } from "../models/Subject.js";
 import { ensureDataFolder, teachingFolderSegments } from "../utils/autoFolders.js";
 import { FacultyAssignment } from "../models/FacultyAssignment.js";
+import { MentorAssignment } from "../models/MentorAssignment.js";
 import { assertFacultyCanAccessClassSubject, studentEnrolledInClass } from "../access.js";
 import { isObjectId, requireRole, sendValidationError } from "../middleware/auth.js";
 
@@ -340,7 +341,26 @@ async function authorizeAttendanceDocumentAccess(req, res, attendance) {
     return true;
   }
   if (req.user.role === "faculty") {
-    return assertFacultyCanAccessClassSubject(req, res, req.user.id, String(attendance.classId), String(attendance.subjectId));
+    // Teaching faculty may review documents for their assigned class + subject.
+    const teachingAssignment = await FacultyAssignment.findOne({
+      facultyId: req.user.id,
+      classId: attendance.classId,
+      subjectId: attendance.subjectId,
+    }).lean();
+    if (teachingAssignment) return true;
+
+    // The student's currently assigned mentor may access the complete attendance
+    // document history for that mentee (including earlier academic years), even when
+    // the mentor does not teach the linked subject. The active student assignment is
+    // the authorization boundary; a former mentor loses access after reassignment.
+    const mentorAssignment = await MentorAssignment.findOne({
+      mentorId: req.user.id,
+      studentId: attendance.studentId,
+      status: "active",
+    }).lean();
+    if (mentorAssignment) return true;
+    res.status(403).json({ error: "Only faculty assigned to this class/subject or the student's active mentor can access this document." });
+    return false;
   }
   res.status(403).json({ error: "You do not have permission to access attendance documents." });
   return false;

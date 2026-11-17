@@ -12,6 +12,11 @@ import AdminConsole from "./AdminConsole";
 import AcademicRecords from "./AcademicRecords";
 import EventWorkspace from "./EventWorkspace";
 import BulkImportCenter from "./BulkImportCenter";
+import ReportsWorkspace from "./ReportsWorkspace";
+import AdminMentorWorkspace from "./AdminMentorWorkspace";
+import MentorWorkspace from "./MentorWorkspace";
+import HostelAdminWorkspace from "./HostelAdminWorkspace";
+import StudentNocWorkspace from "./StudentNocWorkspace";
 
 const ICONS = { LayoutDashboard, Users, GraduationCap, ClipboardCheck, FolderTree, BookOpen, Briefcase, CalendarDays, BarChart3, Building2, FileText, UserCircle, Settings, FileSpreadsheet };
 const ROLE_LABEL = { admin: "Administrator", faculty: "Faculty", student: "Student" };
@@ -83,7 +88,7 @@ export default function PortalApp({ role }) {
   useEffect(() => { checkSession(); }, [checkSession]);
   async function handleLogout() { await api("/api/auth/logout", { method: "POST" }).catch(() => {}); setUser(null); setActivePage("dashboard"); }
   const nav = NAVIGATION[role] || [];
-  const activeLabel = activePage === "dashboard" ? "Dashboard" : activePage === "users" ? "User Management" : activePage === "imports" ? "Excel / Bulk Import" : activePage === "academics" ? "Academic Setup" : activePage === "approvals" ? "Approvals & Requests" : activePage === "folders" ? "Automatic Data Filing" : activePage === "attendance" ? (role === "student" ? "My Attendance" : "Attendance Management") : activePage === "marks" ? (role === "student" ? "My CIA & Internal Marks" : "CIA & Internal Marks Entry") : activePage === "classes" ? "My Classes" : activePage === "events" ? "Events & Proposals" : activePage === "profile" ? "My Profile" : MODULES[activePage]?.label || activePage;
+  const activeLabel = activePage === "dashboard" ? "Dashboard" : activePage === "users" ? "User Management" : activePage === "imports" ? "Excel / Bulk Import" : activePage === "academics" ? "Academic Setup" : activePage === "approvals" ? "Approvals & Requests" : activePage === "mentor-admin" ? "Mentoring" : activePage === "hostel-admin" ? "Hostel Room Allotment" : activePage === "mentor" ? "Mentoring" : activePage === "student-noc" ? "Mentoring" : activePage === "reports" ? "Academic Reports" : activePage === "folders" ? "Automatic Data Filing" : activePage === "attendance" ? (role === "student" ? "My Attendance" : "Attendance Management") : activePage === "marks" ? (role === "student" ? "My CIA & Internal Marks" : "CIA & Internal Marks Entry") : activePage === "classes" ? "My Classes" : activePage === "events" ? "Events & Proposals" : activePage === "profile" ? "My Profile" : MODULES[activePage]?.label || activePage;
 
   if (checking) return <div className="erp-full-loading"><LoaderCircle className="erp-spin" /> Loading secure portal…</div>;
   if (!user) return <LoginScreen role={role} initialError={loginError} onLogin={(account) => { setUser(account); setLoginError(""); setActivePage("dashboard"); }} />;
@@ -103,6 +108,11 @@ export default function PortalApp({ role }) {
         {activePage === "imports" && (role === "admin" || role === "faculty") && <BulkImportCenter user={user} />}
         {activePage === "academics" && role === "admin" && <AdminConsole section="academics" />}
         {activePage === "approvals" && role === "admin" && <AdminConsole section="approvals" />}
+        {activePage === "mentor-admin" && role === "admin" && <AdminMentorWorkspace />}
+        {activePage === "hostel-admin" && role === "admin" && <HostelAdminWorkspace />}
+        {activePage === "mentor" && role === "faculty" && <MentorWorkspace user={user} />}
+        {activePage === "student-noc" && role === "student" && <StudentNocWorkspace user={user} />}
+        {activePage === "reports" && (role === "admin" || role === "faculty") && <ReportsWorkspace user={user} />}
         {activePage === "folders" && role === "admin" && <AdminConsole section="folders" />}
         {activePage === "classes" && role === "faculty" && <MyClasses user={user} />}
         {(activePage === "attendance" || activePage === "marks") && <AcademicRecords module={activePage} user={user} />}

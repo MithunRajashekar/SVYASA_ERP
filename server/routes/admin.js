@@ -11,6 +11,11 @@ import { User } from "../models/User.js";
 import { Attendance } from "../models/Attendance.js";
 import { Marks } from "../models/Marks.js";
 import { DataFolder } from "../models/DataFolder.js";
+import { MentorAssignment } from "../models/MentorAssignment.js";
+import { StudentNoc } from "../models/StudentNoc.js";
+import { StudentCertificate } from "../models/StudentCertificate.js";
+import { HostelRoom } from "../models/HostelRoom.js";
+import { HostelAllotment } from "../models/HostelAllotment.js";
 import { authenticate, requireRole, isObjectId, sendValidationError, safeUser } from "../middleware/auth.js";
 import { ensureDataFolder, classFolderSegments, teachingFolderSegments, userFolderId } from "../utils/autoFolders.js";
 
@@ -62,6 +67,17 @@ adminRouter.put("/admin/users/:id", async (req, res) => {
   }
   if (changes.email) changes.email = changes.email.toLowerCase();
   if (changes.semester !== undefined && changes.semester !== null && (!Number.isInteger(changes.semester) || changes.semester < 1 || changes.semester > 12)) return sendValidationError(res, "Semester must be a whole number from 1 to 12.");
+  if (user.role === "student" && req.body?.personalDetails !== undefined) {
+    const allowedPersonalFields = ["dateOfBirth", "gender", "bloodGroup", "nationality", "addressLine1", "addressLine2", "city", "state", "postalCode", "guardianName", "guardianRelation", "guardianEmail", "guardianPhone", "emergencyContactName", "emergencyContactPhone", "admissionNumber"];
+    if (!req.body.personalDetails || typeof req.body.personalDetails !== "object" || Array.isArray(req.body.personalDetails)) return sendValidationError(res, "Personal details must be an object.");
+    const personalDetails = {};
+    for (const [key, value] of Object.entries(req.body.personalDetails)) {
+      if (!allowedPersonalFields.includes(key)) return sendValidationError(res, `Unsupported personal detail: ${key}.`);
+      personalDetails[key] = String(value ?? "").trim().slice(0, key.toLowerCase().includes("email") ? 254 : 180);
+    }
+    if (personalDetails.guardianEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(personalDetails.guardianEmail)) return sendValidationError(res, "Guardian email address is invalid.");
+    user.personalDetails = { ...(user.personalDetails?.toObject?.() || user.personalDetails || {}), ...personalDetails };
+  }
   if (user.role === "admin" && changes.isActive === false) {
     const activeAdmins = await User.countDocuments({ role: "admin", isActive: true });
     if (activeAdmins <= 1) return res.status(409).json({ error: "The last active administrator cannot be deactivated. Create another administrator first." });
@@ -235,4 +251,121 @@ adminRouter.delete("/admin/enrollments/:id", async (req, res) => {
   }
   await Enrollment.findByIdAndDelete(req.params.id);
   return res.json({ success: true });
+});
+
+
+// Mentor management is administered centrally. A mentor is an existing faculty account,
+// not a separate login role. Each student has one active mentor in an academic year.
+adminRouter.get("/admin/mentor-assignments", async (_req, res) => {
+  const assignments = await MentorAssignment.find({}).populate("mentorId", "name code email department isActive").populate("studentId", "name code usn department program semester section isActive").sort({ academicYear: -1, updatedAt: -1 }).lean();
+  return res.json({ assignments });
+});
+
+adminRouter.post("/admin/mentor-assignments", async (req, res) => {
+  const { mentorId, studentId } = req.body || {};
+  const academicYear = String(req.body?.academicYear || "").trim();
+  const notes = String(req.body?.notes || "").trim().slice(0, 500);
+  if (![mentorId, studentId].every(isObjectId)) return sendValidationError(res, "Select a valid faculty mentor and student.");
+  if (!/^\d{4}-\d{4}$/.test(academicYear)) return sendValidationError(res, "Academic year must use YYYY-YYYY, for example 2026-2027.");
+  const [mentor, student] = await Promise.all([
+    User.findOne({ _id: mentorId, role: "faculty", isActive: true }).lean(),
+    User.findOne({ _id: studentId, role: "student", isActive: true }).lean(),
+  ]);
+  if (!mentor || !student) return sendValidationError(res, "The selected faculty or student account is not active.");
+  const folderId = await ensureDataFolder("Mentoring", [academicYear, mentor.code, student.code]);
+  await MentorAssignment.updateMany({ studentId, status: "active", academicYear: { $ne: academicYear } }, { $set: { status: "inactive" } });
+  const assignment = await MentorAssignment.findOneAndUpdate(
+    { studentId, academicYear },
+    { $set: { mentorId, studentId, academicYear, notes, folderId, status: "active", assignedBy: req.user.id } },
+    { upsert: true, returnDocument: "after", runValidators: true, setDefaultsOnInsert: true }
+  );
+  // If Admin changes the mentor in the same academic year, keep already-pending
+  // NOC requests routed to the newly assigned mentor instead of orphaning them.
+  await StudentNoc.updateMany(
+    { studentId, status: "pending" },
+    { $set: { mentorId, mentorAssignmentId: assignment._id } }
+  );
+  // Pending student certificates follow the current mentor assignment too, so a
+  // reassignment does not leave certificate reviews stranded with the previous mentor.
+  await StudentCertificate.updateMany(
+    { studentId, uploadedByRole: "student", reviewStatus: "pending" },
+    { $set: { mentorId, mentorAssignmentId: assignment._id } }
+  );
+  return res.status(201).json({ success: true, assignment });
+});
+
+adminRouter.delete("/admin/mentor-assignments/:id", async (req, res) => {
+  if (!isObjectId(req.params.id)) return sendValidationError(res, "Mentor assignment ID is invalid.");
+  const assignment = await MentorAssignment.findByIdAndUpdate(req.params.id, { $set: { status: "inactive" } }, { returnDocument: "after" });
+  if (!assignment) return res.status(404).json({ error: "Mentor assignment not found." });
+  return res.json({ success: true, assignment });
+});
+
+adminRouter.get("/admin/noc-requests", async (_req, res) => {
+  const records = await StudentNoc.find({}).populate("studentId", "name code usn department program semester section").populate("mentorId", "name code").populate("reviewedBy", "name code role").sort({ createdAt: -1 }).limit(1000).lean();
+  return res.json({ requests: records.map((row) => ({ ...row, id: String(row._id) })) });
+});
+
+// Hostel room inventory and bed allotment are Admin-controlled. Student requests remain
+// in the existing hostel-requests module; actual allocation is recorded here.
+adminRouter.get("/admin/hostel", async (_req, res) => {
+  const [rooms, allotments, requests] = await Promise.all([
+    HostelRoom.find({}).sort({ hostelName: 1, block: 1, roomNumber: 1 }).lean(),
+    HostelAllotment.find({ status: "active" }).populate("studentId", "name code usn department program semester section").populate("roomId").populate("allocatedBy", "name code").sort({ allocatedAt: -1 }).lean(),
+    ModuleRecord.find({ module: "hostel-requests" }).populate("createdBy", "name code").sort({ createdAt: -1 }).limit(300).lean(),
+  ]);
+  return res.json({ rooms, allotments, requests });
+});
+
+adminRouter.post("/admin/hostel/rooms", async (req, res) => {
+  const body = req.body || {};
+  const hostelName = String(body.hostelName || "").trim().slice(0, 120);
+  const block = String(body.block || "").trim().slice(0, 60);
+  const floor = String(body.floor || "").trim().slice(0, 30);
+  const roomNumber = String(body.roomNumber || "").trim().slice(0, 30);
+  const roomType = String(body.roomType || "double").trim();
+  const capacity = Number(body.capacity);
+  if (!hostelName || !roomNumber) return sendValidationError(res, "Hostel name and room number are required.");
+  if (!Number.isInteger(capacity) || capacity < 1 || capacity > 100) return sendValidationError(res, "Room capacity must be a whole number from 1 to 100.");
+  if (!["single", "double", "triple", "dormitory", "other"].includes(roomType)) return sendValidationError(res, "Choose a valid room type.");
+  const folderId = await ensureDataFolder("Hostel", [hostelName, block || "General Block", `Room ${roomNumber}`]);
+  const room = await HostelRoom.create({ hostelName, block, floor, roomNumber, roomType, capacity, notes: String(body.notes || "").trim().slice(0, 500), folderId, createdBy: req.user.id });
+  return res.status(201).json({ success: true, room });
+});
+
+adminRouter.delete("/admin/hostel/rooms/:id", async (req, res) => {
+  if (!isObjectId(req.params.id)) return sendValidationError(res, "Room ID is invalid.");
+  if (await HostelAllotment.exists({ roomId: req.params.id, status: "active" })) return res.status(409).json({ error: "This room has active student allotments. Release them before removing the room." });
+  const room = await HostelRoom.findByIdAndDelete(req.params.id);
+  if (!room) return res.status(404).json({ error: "Hostel room not found." });
+  return res.json({ success: true });
+});
+
+adminRouter.post("/admin/hostel/allotments", async (req, res) => {
+  const { studentId, roomId } = req.body || {};
+  const academicYear = String(req.body?.academicYear || "").trim();
+  const bedNumber = Number(req.body?.bedNumber);
+  if (![studentId, roomId].every(isObjectId)) return sendValidationError(res, "Select a valid student and hostel room.");
+  if (!/^\d{4}-\d{4}$/.test(academicYear)) return sendValidationError(res, "Academic year must use YYYY-YYYY.");
+  if (!Number.isInteger(bedNumber) || bedNumber < 1) return sendValidationError(res, "Bed number must be a positive whole number.");
+  const [student, room] = await Promise.all([
+    User.findOne({ _id: studentId, role: "student", isActive: true }).lean(),
+    HostelRoom.findOne({ _id: roomId, isActive: true }).lean(),
+  ]);
+  if (!student || !room) return sendValidationError(res, "The selected student or active room was not found.");
+  if (bedNumber > room.capacity) return sendValidationError(res, `This room has only ${room.capacity} bed(s).`);
+  if (await HostelAllotment.exists({ studentId, academicYear, status: "active" })) return res.status(409).json({ error: "This student already has an active hostel allotment for the selected academic year." });
+  if (await HostelAllotment.exists({ roomId, bedNumber, status: "active" })) return res.status(409).json({ error: "That bed is already allotted. Choose another available bed." });
+  const usedBeds = await HostelAllotment.countDocuments({ roomId, status: "active" });
+  if (usedBeds >= room.capacity) return res.status(409).json({ error: "This room is full." });
+  const folderId = await ensureDataFolder("Hostel", [room.hostelName, room.block || "General Block", `Room ${room.roomNumber}`, academicYear]);
+  const allotment = await HostelAllotment.create({ studentId, roomId, bedNumber, academicYear, folderId, allocatedBy: req.user.id, notes: String(req.body?.notes || "").trim().slice(0, 500) });
+  return res.status(201).json({ success: true, allotment });
+});
+
+adminRouter.delete("/admin/hostel/allotments/:id", async (req, res) => {
+  if (!isObjectId(req.params.id)) return sendValidationError(res, "Allotment ID is invalid.");
+  const allotment = await HostelAllotment.findOneAndUpdate({ _id: req.params.id, status: "active" }, { $set: { status: "released", releasedAt: new Date() } }, { returnDocument: "after" });
+  if (!allotment) return res.status(404).json({ error: "Active hostel allotment not found." });
+  return res.json({ success: true, allotment });
 });

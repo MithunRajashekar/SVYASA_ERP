@@ -4,15 +4,17 @@ import { MODULES, NAVIGATION } from "../shared/modules.js";
 
 const SPECIAL_PAGES = new Set([
   "dashboard", "users", "imports", "academics", "approvals", "folders", "events",
-  "attendance", "marks", "classes", "profile",
+  "attendance", "marks", "classes", "profile", "mentor-admin", "hostel-admin",
+  "mentor", "student-noc", "reports",
 ]);
 
 test("every ERP module has a complete, valid navigation entry for the Administrator", () => {
   const moduleKeys = Object.keys(MODULES);
   const adminPages = new Set(NAVIGATION.admin.flatMap((group) => group.items.map((item) => item.id)));
   assert.equal(moduleKeys.length, 22, "the shared module catalogue should include all planned operational modules");
+  const consolidatedMentoringModules = new Set(["mentoring", "mentoring-requests"]);
   for (const key of moduleKeys) {
-    assert.ok(adminPages.has(key), `Administrator navigation is missing ${key}`);
+    assert.ok(consolidatedMentoringModules.has(key) || adminPages.has(key), `Administrator navigation is missing ${key}`);
     const definition = MODULES[key];
     assert.ok(definition.label && definition.group && definition.description, `${key} needs a label, group and description`);
     const fieldKeys = (definition.fields || []).map((field) => field.key);
@@ -41,5 +43,8 @@ test("each portal navigation references only a known module or a portal page", (
 
 test("the Administrator portal contains every shared module", () => {
   const adminPages = new Set(NAVIGATION.admin.flatMap((group) => group.items.map((item) => item.id)));
-  for (const key of Object.keys(MODULES)) assert.ok(adminPages.has(key));
+  const consolidatedMentoringModules = new Set(["mentoring", "mentoring-requests"]);
+  for (const key of Object.keys(MODULES)) {
+    assert.ok(consolidatedMentoringModules.has(key) || adminPages.has(key));
+  }
 });

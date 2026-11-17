@@ -22,6 +22,8 @@ import { adminRouter } from "./routes/admin.js";
 import { workspaceRouter } from "./routes/workspace.js";
 import { portalRouter } from "./routes/portal.js";
 import { importsRouter } from "./routes/imports.js";
+import { mentorRouter } from "./routes/mentor.js";
+import { reportsRouter } from "./routes/reports.js";
 
 const allowedOrigins = new Set(
   (process.env.FRONTEND_ORIGINS || [5173, 5174, 5175].flatMap((port) => [`http://localhost:${port}`, `http://127.0.0.1:${port}`]).join(","))
@@ -92,6 +94,8 @@ export function createApp() {
   app.use("/api", workspaceRouter);
   app.use("/api", portalRouter);
   app.use("/api", importsRouter);
+  app.use("/api", mentorRouter);
+  app.use("/api", reportsRouter);
 
   app.get("/api/faculty-data", authenticate, requireRole("faculty", "admin"), async (req, res) => {
     if (req.user.role === "faculty") return res.json({ users: [req.user] });

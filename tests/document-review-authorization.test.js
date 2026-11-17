@@ -13,8 +13,9 @@ test("student document review endpoint is available to Faculty and Admin only", 
   assert.match(route, /attendanceRouter\.patch\("\/attendance-documents\/:documentId\/review",\s*requireRole\("faculty",\s*"admin"\)/);
 });
 
-test("Faculty review is scoped to their own exact class and subject allocation", () => {
-  assert.match(route, /if \(req\.user\.role === "faculty"\)\s*\{\s*return assertFacultyCanAccessClassSubject\(req, res, req\.user\.id, String\(attendance\.classId\), String\(attendance\.subjectId\)\);/s);
+test("Faculty review is scoped to teaching allocations or the currently assigned mentor for the student", () => {
+  assert.match(route, /FacultyAssignment\.findOne\(\{\s*facultyId: req\.user\.id,\s*classId: attendance\.classId,\s*subjectId: attendance\.subjectId/s);
+  assert.match(route, /MentorAssignment\.findOne\(\{\s*mentorId: req\.user\.id,\s*studentId: attendance\.studentId,\s*status: "active"/s);
   assert.match(route, /authorizeAttendanceDocumentAccess\(req, res, attendance\)/);
 });
 

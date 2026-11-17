@@ -84,7 +84,7 @@ MongoDB does not support physical folders. The ERP implements a logical hierarch
 
 ## 8. Known boundaries
 
-The package implements the database-backed workflows described above. It does not include live external services that require institution/vendor accounts or real hardware/inventory. These remain integration work: payment gateway and bank reconciliation, physical library scanner/RFID circulation, hostel bed/room inventory, placement-provider APIs, email/SMS delivery, private object storage for attendance-document files at larger scale, e-signature and production SSO. The library catalogue/request module is not a barcode circulation system; hostel requests are not a room allocation engine.
+The package implements the database-backed workflows described above. It does not include live external services that require institution/vendor accounts or real hardware/inventory. These remain integration work: payment gateway and bank reconciliation, physical library scanner/RFID circulation, placement-provider APIs, email/SMS delivery, private object storage for attendance-document files at larger scale, e-signature and production SSO. The library catalogue/request module is not a barcode circulation system. Hostel room inventory and bed allotment are now implemented in the Admin portal, but there is no external hostel/property management integration or automated waiting-list allocator.
 
 A Free M0 Atlas cluster is suitable for development and a small test deployment, not a production capacity guarantee for a full university.
 
@@ -157,3 +157,16 @@ The attendance workflow supports sick certificates and OD letters in PDF, JPEG o
 ## One-page faculty attendance workflow update
 
 Faculty can select a sick certificate or OD letter directly in each student row before saving. The single page-level Save Attendance & Documents action first upserts attendance and then uploads each selected document to the newly saved attendance ID. No second page or per-row Attach action is required. After saving, the same page remains open; documents are shown inline with status. The action is disabled when there are no unsaved changes and is protected against repeated clicks while saving. Failed document uploads remain selected with an inline error for retry.
+
+
+## 13. New report, mentoring, NOC and hostel features (17 November 2026)
+
+- Added downloadable Excel attendance and CIA/Internal marks reports. Administrator report access is institution-wide; Faculty access is checked against the exact assigned class/subject pair; Students retain personal-only attendance and marks downloads. Attendance report export supports a date range and includes remarks and document review statuses. CIA/Internals exports contain three CIA values, two Internal values, separate averages and completion counts.
+- Added Admin-managed mentor-to-mentee assignments for an academic year. A mentor is an existing Faculty account with an additional assigned responsibility, not a new role or separate portal. The schema enforces one mentor assignment per student and academic year; reassignment deactivates a previous active assignment for a different year.
+- Added a Faculty Mentoring workspace. Mentors see only their assigned mentees, review OD/sick documents associated with those mentees (subject to the attendance class academic year matching the mentor assignment), and issue/reject NOC requests. Existing teaching-assignment document review remains available. NOC decisions include reviewer role, timestamp, remarks and a generated certificate number. Students can create NOC requests only when assigned an active mentor and can view/download issued certificates. Admin has a university-wide NOC oversight view and owns mentor assignment.
+- Added real Admin hostel room inventory and bed allotment. Admin can create rooms, define capacity, allocate individual beds to active students by academic year, view occupied/vacant capacity and release beds. Unique partial indexes and server validation prevent an active student from receiving two allotments for the same year or a bed being allotted twice; capacity is checked before allocation. Student hostel requests remain requests, not automatic allotments.
+- Added explicit active-mentor validation before NOC decisions and academic-year filtering in the mentor pending-document inbox so a reassigned mentor does not see older-year documents outside the assignment scope.
+
+## 14. New validation snapshot
+
+The focused source-level regression suite `node --test tests/module-catalog.test.js tests/document-review-authorization.test.js tests/mentor-hostel-reports.test.js tests/assessment.test.js` passes **19/19 tests**. Tests cover portal navigation, Admin mentor assignment, mentee-scoped document review, NOC issue/reject, Admin room inventory/bed allotment and class/subject-scoped attendance/marks downloads. This does not replace live Atlas, browser or full Vite build testing.

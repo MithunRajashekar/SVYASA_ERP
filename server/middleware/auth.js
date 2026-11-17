@@ -166,6 +166,7 @@ export function safeUser(user) {
     semester: user.semester ?? null,
     section: user.section || "",
     program: user.program || "",
+    personalDetails: user.personalDetails ? { ...user.personalDetails } : {},
     isActive: user.isActive !== false,
     createdAt: user.createdAt || null,
   };

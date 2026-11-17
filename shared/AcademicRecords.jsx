@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import * as XLSX from "xlsx";
 import {
-  AlertCircle, Check, ClipboardCheck, LoaderCircle, Save, RefreshCw,
+  AlertCircle, Check, ClipboardCheck, LoaderCircle, Save, RefreshCw, Download,
   Search, Paperclip, Upload, CheckCircle2, XCircle,
 } from "lucide-react";
 import { api, fmtDate } from "./api";
@@ -47,8 +48,11 @@ function DocumentList({ documents = [], onReview, onDownload, showReview = false
         <span className={`erp-doc-status erp-doc-status-${document.reviewStatus}`}>{document.reviewStatus}</span>
       </div>
       {document.note && <small>{document.note}</small>}
+      {document.reviewStatus === "pending" && <small>Awaiting review by the assigned faculty member or an administrator.</small>}
+      {document.reviewStatus !== "pending" && document.reviewedByRole && <small>{document.reviewStatus === "approved" ? "Approved" : "Rejected"} by {document.reviewedByRole === "faculty" ? "Faculty" : "Administrator"}{document.reviewedAt ? ` · ${new Date(document.reviewedAt).toLocaleDateString("en-IN")}` : ""}</small>}
       {document.reviewRemarks && <small>Review: {document.reviewRemarks}</small>}
       {showReview && document.reviewStatus === "pending" && <div className="erp-document-review">
+        <small><strong>Faculty document decision</strong> · You can approve or reject this document for your assigned class and subject.</small>
         <input className="erp-input erp-inline-input" value={reviewRemarks[document.id] || ""} onChange={(event) => setReviewRemarks((current) => ({ ...current, [document.id]: event.target.value }))} placeholder="Review remark (optional)"/>
         <div className="erp-row-actions">
           <button className="erp-button erp-button-small" onClick={() => onReview?.(document.id, "approved", reviewRemarks[document.id] || "")}><CheckCircle2 size={13}/> Approve</button>
@@ -287,6 +291,27 @@ function RoleAcademicRecords({ module, user }) {
     } catch (downloadError) { setError(downloadError.message); }
   }
 
+  function downloadStudentReport() {
+    if (!summary?.length) return;
+    const rows = module === "attendance"
+      ? summary.flatMap((subject) => (subject.history || []).map((entry) => ({
+        subject: subject.subject_name, subjectCode: subject.subject_code, attendanceDate: entry.date,
+        status: entry.status, attendanceRemarks: entry.remarks || "",
+        supportingDocuments: (entry.documents || []).map((doc) => `${doc.documentType}: ${doc.originalName} (${doc.reviewStatus})`).join(" | "),
+        attendancePercentage: subject.percentage,
+      })))
+      : summary.map((row) => ({
+        subject: row.subject_name, subjectCode: row.subject_code,
+        cia1: row.cia1 ?? "", cia2: row.cia2 ?? "", cia3: row.cia3 ?? "",
+        ciaAverage: row.ciaAverage ?? "", internal1: row.internal1 ?? "", internal2: row.internal2 ?? "",
+        internalAverage: row.internalAverage ?? "", ciaCompleted: row.ciaCount ?? 0, internalCompleted: row.internalCount ?? 0,
+      }));
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, worksheet, module === "attendance" ? "My Attendance" : "My Marks");
+    XLSX.writeFile(workbook, module === "attendance" ? "SVYASA_My_Attendance.xlsx" : "SVYASA_My_CIA_Internal_Marks.xlsx");
+  }
+
   async function saveMarks() {
     if (!selected) return;
     setSaving(true); setError(""); setSuccess("");
@@ -302,7 +327,7 @@ function RoleAcademicRecords({ module, user }) {
   }
 
   if (isStudent) return <section className="erp-page">
-    <div className="erp-page-head"><div><div className="erp-eyebrow">My Academics</div><h1>{module === "attendance" ? "My Attendance" : "My CIA & Internal Marks"}</h1><p>{module === "attendance" ? "View attendance, remarks and submit supporting sick certificates or OD letters." : "View three CIA scores, two Internal assessments and their separate averages."}</p></div><button className="erp-button erp-button-light" onClick={loadStudent}><RefreshCw size={15}/> Refresh</button></div>
+    <div className="erp-page-head"><div><div className="erp-eyebrow">My Academics</div><h1>{module === "attendance" ? "My Attendance" : "My CIA & Internal Marks"}</h1><p>{module === "attendance" ? "View attendance, remarks and submit supporting sick certificates or OD letters." : "View three CIA scores, two Internal assessments and their separate averages."}</p></div><div className="erp-actions">{summary?.length > 0 && <button className="erp-button erp-button-light" onClick={downloadStudentReport}><Download size={15}/> Download Excel</button>}<button className="erp-button erp-button-light" onClick={loadStudent}><RefreshCw size={15}/> Refresh</button></div></div>
     {(error || success) && <div className={`erp-alert ${error ? "erp-alert-error" : "erp-alert-success"}`}>{error ? <AlertCircle size={16}/> : <Check size={16}/>} {error || success}</div>}
     <div className="erp-card">
       {loading ? <div className="erp-loading"><LoaderCircle className="erp-spin"/> Loading your records…</div> : !summary?.length ? <div className="erp-empty"><ClipboardCheck size={24}/><strong>No records available yet</strong><span>Your records appear after the relevant faculty enters and saves them.</span></div> : module === "attendance" ? <div className="erp-student-attendance-list">
@@ -326,7 +351,7 @@ function RoleAcademicRecords({ module, user }) {
   const allAttendanceSaved = roster.length > 0 && roster.every((row) => Boolean(row.attendanceId));
 
   return <section className="erp-page">
-    <div className="erp-page-head"><div><div className="erp-eyebrow">Teaching</div><h1>{module === "attendance" ? "Attendance Management" : "CIA & Internal Marks Entry"}</h1><p>{module === "attendance" ? "Mark attendance, add remarks and attach sick certificates or OD letters, then save everything together on this page." : "Enter three CIA scores and two Internal assessment scores. Separate averages are calculated automatically."}</p></div><button className="erp-button erp-button-light" onClick={loadAssignments}><RefreshCw size={15}/> Refresh allocations</button></div>
+    <div className="erp-page-head"><div><div className="erp-eyebrow">Teaching</div><h1>{module === "attendance" ? "Attendance Management" : "CIA & Internal Marks Entry"}</h1><p>{module === "attendance" ? "Mark attendance, add remarks and attach sick certificates or OD letters on this page. Review student-submitted documents for your assigned class and subject; Administrators retain institution-wide oversight." : "Enter three CIA scores and two Internal assessment scores. Separate averages are calculated automatically."}</p></div><button className="erp-button erp-button-light" onClick={loadAssignments}><RefreshCw size={15}/> Refresh allocations</button></div>
     {(error || success) && <div className={`erp-alert ${error ? "erp-alert-error" : "erp-alert-success"}`}>{error ? <AlertCircle size={16}/> : <Check size={16}/>} {error || success}</div>}
     <div className="erp-card">
       <div className="erp-toolbar"><label className="erp-form-field erp-toolbar-select"><span>Assigned class / subject</span><select className="erp-input" value={assignmentId} disabled={saving} onChange={(event) => setAssignmentId(event.target.value)}><option value="">Select allocation</option>{assignments.map((item) => <option key={item.assignmentId} value={item.assignmentId}>{item.label}</option>)}</select></label>{module === "attendance" && <label className="erp-form-field erp-toolbar-date"><span>Attendance date</span><input className="erp-input" type="date" value={date} disabled={saving} onChange={(event) => setDate(event.target.value)}/></label>}<label className="erp-search"><Search size={16}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search students..."/></label></div>
